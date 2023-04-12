@@ -25,6 +25,21 @@ and run the Docker container *ceciledc/fenics_mixed_dimensional:13-03-20* by:
         cd ulfy-master
         python3 setup.py install
 
+### Dependencies for Geometry ###
+
+This `Geometry/bench_geometry.py` contains functionality for creating
+GMSH geometries of connected rectangular cells inclosed in some larger
+rectangle forming the extracellular space.
+
+  <p align="center">
+    <img src="https://github.com/adajel/emi-benchmark/bloc/main/doc/geometry.png">
+  </p>
+
+
+In addition to standard FEniCS stack (`2019.1.0` and higher) you will need
+* `networkx`
+* [`gmshnics`](ihttps://github.com/MiroK/gmshnics)
+
 ### License ###
 
 The software is free: you can redistribute it and/or modify it under the terms
