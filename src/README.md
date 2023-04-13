@@ -32,7 +32,7 @@ GMSH geometries of connected rectangular cells inclosed in some larger
 rectangle forming the extracellular space.
 
   <p align="center">
-    <img src="https://github.com/adajel/emi-benchmark/bloc/main/doc/geometry.png">
+    <img src="https://github.com/adajel/emi-benchmark/blob/main/doc/geometry.png">
   </p>
 
 
