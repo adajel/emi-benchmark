@@ -44,6 +44,24 @@ In addition to standard FEniCS stack (`2019.1.0` and higher) you will need
  #### TODO ####
  - [ ] Geometry in 3d (based on boolean operations or maybe with hand-coded boxes for speed?)
 
+### Membrane ###
+
+This `Membrane/membrane.py` contains functionality for solving ODEs localized on
+facets and interaction with HDiv Trace space in FEniCS. 
+  
+ #### Dependencies ####
+In addition to standard FEniCS stack (`2019.1.0` and higher) you will need
+* [`gotran`](https://finsberg.github.io/docs.gotran/index.html)
+
+which is used to generate the Python module defining the ODE.
+
+ #### TODO ####
+ - [ ] consider a test where we have dy/dt = A(x)y with y(t=0) = y0
+ - [ ] after stepping u should be fine
+ - [ ] add forcing:  dy/dt = A(x)y + f(t) with y(t=0) = y0
+ - [ ] things are currently quite slow -> multiprocessing?
+ - [ ] rely on cbc.beat instead (mostly for speed reason)?
+
 ### License ###
 
 The software is free: you can redistribute it and/or modify it under the terms
