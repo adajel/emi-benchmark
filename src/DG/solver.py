@@ -39,8 +39,8 @@ class Solver:
         self.params = params
 
         # Lagrange
-        self.lagrange = False
-        #self.lagrange = True
+        #self.lagrange = False
+        self.lagrange = True
 
         self.sf = 10
 
@@ -90,6 +90,12 @@ class Solver:
         self.dt = Constant(params.dt)
         self.phi_M_init = Constant(params.phi_M_init)
 
+        self.E_Na = Constant(params.E_Na)
+        self.E_K = Constant(params.E_K)
+        self.g_Na_leak = params.g_Na_leak
+        self.g_K_leak = Constant(params.g_K_leak)
+        self.g_ch_syn = params.g_ch_syn
+
         # project diffusion coefficients to PK based on subdomain
         self.K = self.make_global(Constant(self.params.K1), Constant(self.params.K2))
 
@@ -134,6 +140,12 @@ class Solver:
         C_phi = self.C_phi
         C_M = self.C_M
 
+        E_Na = self.E_Na
+        E_K = self.E_K
+        g_Na_leak = self.g_Na_leak
+        g_K_leak = self.g_K_leak
+        g_ch_syn = self.g_ch_syn
+
         if self.lagrange:
             # test and trial functions
             u_phi, _c = TrialFunctions(self.V_pot)
@@ -146,7 +158,10 @@ class Solver:
         # initialize form
         a = 0; L = 0
 
-        #self.I_ch = 0
+        # total channel current
+        I_ch = g_Na_leak*(self.phi_M_prev_PDE - E_Na) \
+             + g_ch_syn*(self.phi_M_prev_PDE - E_Na) \
+             + g_K_leak*(self.phi_M_prev_PDE - E_K)
 
         # equation potential (drift terms)
         a += inner(self.K*grad(u_phi), grad(v_phi)) * dx \
@@ -201,9 +216,13 @@ class Solver:
                 g_robin_phi = self.phi_M_prev_PDE
             else:
                 g_robin_phi = self.phi_M_prev_PDE - self.dt/C_M * self.I_ch
+                #g_robin_phi_gap = self.phi_M_prev_PDE - self.dt/C_M * self.I_gap
 
             L -= C_phi * inner(avg(g_robin_phi), JUMP(v_phi, n_g)) * dS(1) \
                + C_phi * inner(avg(g_robin_phi), JUMP(v_phi, n_g)) * dS(10)
+
+            #L -= C_phi * inner(avg(g_robin_phi_gap), JUMP(v_phi, n_g)) * dS(xx) \
+               #+ C_phi * inner(avg(g_robin_phi_gap), JUMP(v_phi, n_g)) * dS(xx)
 
             # add coupling term (equation for potential)
             a += - C_phi * inner(jump(u_phi), jump(v_phi))*dS(1) \
@@ -369,6 +388,15 @@ class Solver:
         g_Na_bar = Constant(self.params.g_Na_bar)    # Na conductivity HH (S/m^2)
         g_K_bar = Constant(self.params.g_K_bar)      # K conductivity HH (S/m^2)
 
+        g_Na_leak = self.g_Na_leak
+        g_K_leak = self.g_K_leak
+        g_ch_syn = self.g_ch_syn
+
+        E_Na = self.E_Na
+        E_K = self.E_K
+
+        C_M = self.C_M
+
         # get initial values and project to pcws
         n_HH_init = Constant(self.params.n_init)     # gating variable n
         m_HH_init = Constant(self.params.m_init)     # gating variable m
@@ -377,6 +405,7 @@ class Solver:
         m_HH = pcws_constant_project(m_HH_init, self.Q)
         h_HH = pcws_constant_project(h_HH_init, self.Q)
 
+        """
         # get ions
         Na = self.ion_list[0]
         K = self.ion_list[1]
@@ -387,8 +416,15 @@ class Solver:
 
         # total channel current
         I_ch = Na['g_k']*(self.phi_M_prev_PDE - Na['E']) + \
-        K['g_k']*(self.phi_M_prev_PDE - K['E'])
+                K['g_k']*(self.phi_M_prev_PDE - K['E'])
         C_M = Constant(self.params.C_M)
+        """
+
+        # total channel currents conductivity
+        g_Na = g_Na_leak + g_Na_bar*m_HH**3*h_HH
+        g_K = g_K_leak + g_K_bar*n_HH**4
+
+        I_ch = g_Na*(self.phi_M_prev_PDE - E_Na) + g_K*(self.phi_M_prev_PDE - E_K)
 
         # convert phi_M from V to mV
         V_rest = Constant(self.params.V_rest)
@@ -404,7 +440,7 @@ class Solver:
         beta_h = 1.e3/(exp((30.-V_M)/10.) + 1)
 
         # derivatives for Hodgkin Huxley ODEs
-        dphidt = -(1/C_M)*I_ch
+        dphidt = - (1/C_M) * I_ch
         dndt = alpha_n*(1 - n_HH) - beta_n*n_HH
         dmdt = alpha_m*(1 - m_HH) - beta_m*m_HH
         dhdt = alpha_h*(1 - h_HH) - beta_h*h_HH
@@ -415,11 +451,6 @@ class Solver:
 
         # open files for saving bulk results
         f_pot = File('results/active/pot.pvd')
-
-        #f_pot = File('results/active_diff_only/pot.pvd')
-        #f_Na = File('results/active_diff_only/Na.pvd')
-        #f_K = File('results/active_diff_only/K.pvd')
-        #f_Cl = File('results/active_diff_only/Cl.pvd')
 
         # print and plot membrane potential
         num_it = int(round(Tstop/float(self.dt))/self.sf)
@@ -450,7 +481,7 @@ class Solver:
                 f_pot << (phi, k)
 
             # solve for one time step
-            self.solve_for_time_step(k, t)
+            #self.solve_for_time_step(k, t)
 
         # plot phi_M over time
         plt.figure()
@@ -460,11 +491,11 @@ class Solver:
 
         # combine solution for the potential and concentrations
         if self.lagrange:
-            phi, _ = split(self.phi_lag)
+            uh_phi, _ = split(self.phi_lag)
         else:
-            phi = self.phi
+            uh_phi = self.phi
 
-        return uh
+        return uh_phi
 
 
     def initialize_h5_savefile(self, filename):
