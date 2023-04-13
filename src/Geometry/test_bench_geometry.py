@@ -14,7 +14,7 @@ def test_marking():
     padx, pady = 0.1, 0.1
 
     mesh, entity_fs, connectivity = benchmark_mesh(clscale=1,
-                                                   nx=nx, ny=ny, dx=dx, dy=dy, padx=padx, pady=pady,
+                                                   ncells=(nx, ny), dxs=(dx, dy), pads=(padx, pady),
                                                    view=False)
 
     # Some checks that the geometry is sane (as declared)
@@ -83,7 +83,7 @@ def test_load_marking():
     padx, pady = 0.1, 0.15
 
     mesh, entity_fs, connectivity = benchmark_mesh(clscale=0.5,
-                                                   nx=nx, ny=ny, dx=dx, dy=dy, padx=padx, pady=pady,
+                                                   ncells=(nx, ny), dxs=(dx, dy), pads=(padx, pady),                                  
                                                    view=False)
     
     # Dumping to HDF5 ...

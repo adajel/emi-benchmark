@@ -5,26 +5,60 @@ import networkx
 import gmsh
 
 
-def benchmark_mesh(clscale, *, nx, ny, dx, dy, padx, pady, view=False):
+def benchmark_mesh(clscale, *, ncells, dxs, pads, view=False):
     '''
-    EMI geometry with nx x ny rectangle cells of size dx x dy which 
-    are enclosed in rectangle with pad distances. Mesh is meshed with 
-    clscale size. Return mesh, mesh functions marking cells and 
+    EMI geometry with prod(ncells) (hyper)box cells of size (dx0 x dx1 x ... x dxd)
+    for d in R^d which are enclosed in (hyper)box with pad distances. Mesh is 
+    meshed with clscale size. Return mesh, mesh functions marking cells and 
     interfaces/boundaries and lookup table of facet tags -> connected cells
 
     In marking we will have these conventions: extracellular space is tagged
-    as 0. Outer boundary of the extracellular space is labeled as
+    as 1. Outer boundary of the extracellular space is labeled as
 
-      x == xmin -> 1
-      x == xmax -> 2
-      y == ymin -> 3
-      y == ymax -> 4
+      x[0] == xmin -> 1
+      x[0] == xmax -> 2
+      x[1] == ymin -> 3
+      x[1] == ymax -> 4
+      ...
 
-    The EMI cells are >= 1 and their boundaries are >= 5
+    The EMI cells are >= 2 and their boundaries are >= 2*d + 1,  
     '''
-    assert nx >= 1 and ny >= 1
-    assert dx > 0 and dy > 0
-    assert padx > 0 and pady > 0
+    # NOTE: this guy is a dispatcher
+    assert len(ncells) == len(dxs) == len(pads)
+    assert all(n > 0 for n in ncells)
+    assert all(dx > 0 for dx in dxs)
+    assert all(pad > 0 for pad in pads)
+
+    # Dispatch
+    # TODO
+    which_mesh = {2: benchmark_mesh_2d}[len(ncells)]
+    
+    return which_mesh(clscale, ncells=ncells, dxs=dxs, pads=pads, view=view)
+
+
+# Workers for 2d ---
+
+
+def benchmark_mesh_2d(clscale, *, ncells, dxs, pads, view=False):
+    '''
+    EMI geometry with nx x ny rectangle cells of size dx x dywhich are enclosed 
+    in rectangle box with pad distances. Mesh is meshed with clscale size. 
+    Return mesh, mesh functions marking cells and interfaces/boundaries and 
+    lookup table of facet tags -> connected cells
+
+    In marking we will have these conventions: extracellular space is tagged
+    as 1. Outer boundary of the extracellular space is labeled as
+
+      x[0] == xmin -> 1
+      x[0] == xmax -> 2
+      x[1] == ymin -> 3
+      x[1] == ymax -> 4
+    
+    The EMI cells are >= 2 and their boundaries are >= 5
+    '''
+    nx, ny = ncells
+    dx, dy = dxs
+    padx, pady = pads
     
     points = np.array([[i*dx, j*dy] for j in range(ny+1) for i in range(nx+1)])
 
@@ -35,7 +69,7 @@ def benchmark_mesh(clscale, *, nx, ny, dx, dy, padx, pady, view=False):
     gmsh.initialize(['', '-v', '0', '-algo', 'front2d', '-clscale', str(clscale)])
 
     model = gmsh.model
-    model, connectivity = benchmark_geometry(model, points, squares, padx=padx, pady=pady, view=view)
+    model, connectivity = benchmark_geometry_2d(model, points, squares, padx=padx, pady=pady, view=view)
     
     nodes, topologies = msh_gmsh_model(model, 2)
     mesh, entity_functions = mesh_from_gmsh(nodes, topologies)
@@ -45,7 +79,7 @@ def benchmark_mesh(clscale, *, nx, ny, dx, dy, padx, pady, view=False):
     return mesh, entity_functions, connectivity
 
     
-def benchmark_geometry(model, points, squares, *, padx, pady, view=False):
+def benchmark_geometry_2d(model, points, squares, *, padx, pady, view=False):
     '''Define the EMI model'''
     fac = model.occ
     
@@ -124,10 +158,10 @@ def benchmark_geometry(model, points, squares, *, padx, pady, view=False):
     xmin, xmax = xmin-padx, xmax+padx
     ymin, ymax = ymin-pady, ymax+pady
     # Here's the outer boundary labeling convention
-    line_id_to_group = {match(fac, outer_lines, [xmin, 0.5*(ymin+ymax)]): 1,
-                        match(fac, outer_lines, [xmax, 0.5*(ymin+ymax)]): 2,
-                        match(fac, outer_lines, [0.5*(xmin+xmax), ymin]): 3,
-                        match(fac, outer_lines, [0.5*(xmin+xmax), ymax]): 4}
+    line_id_to_group = {match_line(fac, outer_lines, [xmin, 0.5*(ymin+ymax)]): 1,
+                        match_line(fac, outer_lines, [xmax, 0.5*(ymin+ymax)]): 2,
+                        match_line(fac, outer_lines, [0.5*(xmin+xmax), ymin]): 3,
+                        match_line(fac, outer_lines, [0.5*(xmin+xmax), ymax]): 4}
     # The remaining start at 5
     all_lines = set(e[1] for e in model.getEntities(1))  # Their IDs
     inner_lines = all_lines - set(outer_lines)        
@@ -150,8 +184,8 @@ def benchmark_geometry(model, points, squares, *, padx, pady, view=False):
     return model, connectivity
 
 
-def match(factory, candidates, center, tol=1E-13):
-    '''Which candidate line matches the center'''
+def match_line(factory, candidates, center, tol=1E-13):
+    '''Which candidate line match_linees the center'''
     found = False
     for entity in candidates:
         if np.linalg.norm(factory.getCenterOfMass(1, entity)[:2]-np.array(center)) < tol:
@@ -172,7 +206,7 @@ if __name__ == '__main__':
     padx, pady = 0.1, 0.1
 
     mesh, entity_fs, connectivity = benchmark_mesh(clscale=0.2,
-                                                   nx=nx, ny=ny, dx=dx, dy=dy, padx=padx, pady=pady,
+                                                   ncells=(nx, ny), dxs=(dx, dy), pads=(padx, pady),
                                                    view=False)
 
     # Just show of dumping to HDF5 ...
