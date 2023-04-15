@@ -3,6 +3,7 @@ import dlt_dof_extraction as dlt
 import dolfin as df
 import numpy as np
 
+from numbalsoda import lsoda
 
 class MembraneModel():
     '''
@@ -100,6 +101,8 @@ class MembraneModel():
 
     def step(self, dt, stimulus, locator=None):
         df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
+
+        ode_rhs_address = self.ode.rhs_numba.address
         
         lidx = np.arange(self.nodes)        
         if locator is not None:
@@ -112,8 +115,16 @@ class MembraneModel():
                 row_parameters[self.ode.parameter_indices(key)] = value
             current_state = self.states[row]
 
-            new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
+            # new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
+
+            new_state, success = lsoda(ode_rhs_address,
+                                       current_state,
+                                       tsteps,
+                                       data=row_parameters,
+                                       rtol=1.0e-8, atol=1.0e-10)
+            assert success
             self.states[row][:] = new_state[-1]
+            
         self.time = tsteps[-1]
 
         df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')        
@@ -124,16 +135,16 @@ if __name__ == '__main__':
     import tentusscher_panfilov_2006_M_cell as ode
     from facet_plot import vtk_plot
     
-    mesh = df.UnitCubeMesh(4, 4, 4)
+    mesh = df.UnitSquareMesh(128, 128)
     V = df.FunctionSpace(mesh, 'Discontinuous Lagrange Trace', 0)
     u = df.Function(V)
 
-    x, y, z = V.tabulate_dof_coordinates().T
-    u.vector().set_local(np.where(x*(1-x)*y*(1-y)*z*(1-z) < 1E-10, 1, 0))
+    x, y = V.tabulate_dof_coordinates().T
+    u.vector().set_local(np.where(x*(1-x)*y*(1-y) < 1E-10, 1, 0))
     
     facet_f = df.MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
-    df.DomainBoundary().mark(facet_f, 1)
-    tag = 1
+    # df.DomainBoundary().mark(facet_f, 1)
+    tag = 0
     
     membrane = MembraneModel(ode, facet_f=facet_f, tag=tag, V=V)
 

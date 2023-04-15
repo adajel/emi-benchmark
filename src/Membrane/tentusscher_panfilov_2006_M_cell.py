@@ -593,3 +593,239 @@ def monitor(states, t, parameters, monitored=None):
 
     # Return results
     return monitored
+
+# Numba ---
+from numbalsoda import lsoda_sig
+from numba import njit, cfunc, jit
+import numpy as np
+import timeit
+import math
+
+import tentusscher_panfilov_2006_M_cell as model
+
+
+#@cfunc(lsoda_sig)
+@cfunc(lsoda_sig, nopython=True) 
+def rhs_numba(t, states, values, parameters):
+    """
+    Compute the right hand side of the tentusscher_panfilov_2006_M_cell ODE
+    """
+    # Expressions for the Reversal potentials component
+    E_Na =\
+        parameters[45]*parameters[46]*math.log(parameters[42]/states[16])/parameters[44]
+    E_K =\
+        parameters[45]*parameters[46]*math.log(parameters[52]/states[18])/parameters[44]
+    E_Ks = parameters[45]*parameters[46]*math.log((parameters[52] +\
+        parameters[0]*parameters[42])/(states[18] +\
+        parameters[0]*states[16]))/parameters[44]
+    E_Ca =\
+        0.5*parameters[45]*parameters[46]*math.log(parameters[24]/states[12])/parameters[44]
+
+    # Expressions for the Inward rectifier potassium current component
+    alpha_K1 = 0.1/(1 + 6.14421235332821e-06*math.exp(0.06*states[17] -\
+        0.06*E_K))
+    beta_K1 = (0.36787944117144233*math.exp(0.1*states[17] - 0.1*E_K) +\
+        3.0606040200802673*math.exp(0.0002*states[17] - 0.0002*E_K))/(1 +\
+        math.exp(0.5*E_K - 0.5*states[17]))
+    xK1_inf = alpha_K1/(alpha_K1 + beta_K1)
+    i_K1 =\
+        0.4303314829119352*parameters[1]*math.sqrt(parameters[52])*(states[17]\
+        - E_K)*xK1_inf
+
+    # Expressions for the Rapid time dependent potassium current component
+    i_Kr =\
+        0.4303314829119352*parameters[2]*states[0]*states[1]*math.sqrt(parameters[52])*(states[17]\
+        - E_K)
+
+    # Expressions for the Xr1 gate component
+    xr1_inf = 1.0/(1 + math.exp(-26/7 - states[17]/7))
+    alpha_xr1 = 450/(1 + math.exp(-9/2 - states[17]/10))
+    beta_xr1 = 6/(1 +\
+        13.581324522578193*math.exp(0.08695652173913043*states[17]))
+    tau_xr1 = alpha_xr1*beta_xr1
+    values[0] = (-states[0] + xr1_inf)/tau_xr1
+
+    # Expressions for the Xr2 gate component
+    xr2_inf = 1.0/(1 + math.exp(11/3 + states[17]/24))
+    alpha_xr2 = 3/(1 + math.exp(-3 - states[17]/20))
+    beta_xr2 = 1.12/(1 + math.exp(-3 + states[17]/20))
+    tau_xr2 = alpha_xr2*beta_xr2
+    values[1] = (-states[1] + xr2_inf)/tau_xr2
+
+    # Expressions for the Slow time dependent potassium current component
+    i_Ks = parameters[3]*(states[2]*states[2])*(states[17] - E_Ks)
+
+    # Expressions for the Xs gate component
+    xs_inf = 1.0/(1 + math.exp(-5/14 - states[17]/14))
+    alpha_xs = 1400/math.sqrt(1 + math.exp(5/6 - states[17]/6))
+    beta_xs = 1.0/(1 + math.exp(-7/3 + states[17]/15))
+    tau_xs = 80 + alpha_xs*beta_xs
+    values[2] = (-states[2] + xs_inf)/tau_xs
+
+    # Expressions for the Fast sodium current component
+    i_Na =\
+        parameters[4]*states[4]*states[5]*(states[3]*states[3]*states[3])*(states[17]\
+        - E_Na)
+
+    # Expressions for the m gate component
+    m_inf = 1.0/((1 +\
+        0.0018422115811651339*math.exp(-0.1107419712070875*states[17]))*(1 +\
+        0.0018422115811651339*math.exp(-0.1107419712070875*states[17])))
+    alpha_m = 1.0/(1 + math.exp(-12 - states[17]/5))
+    beta_m = 0.1/(1 + math.exp(7 + states[17]/5)) + 0.1/(1 + math.exp(-1/4 +\
+        states[17]/200))
+    tau_m = alpha_m*beta_m
+    values[3] = (-states[3] + m_inf)/tau_m
+
+    # Expressions for the h gate component
+    h_inf = 1.0/((1 +\
+        15212.593285654404*math.exp(0.13458950201884254*states[17]))*(1 +\
+        15212.593285654404*math.exp(0.13458950201884254*states[17])))
+    alpha_h =\
+        (4.4312679295805147e-07*math.exp(-0.14705882352941177*states[17]) if\
+        states[17] < -40 else 0)
+    beta_h = (310000*math.exp(0.3485*states[17]) +\
+        2.7*math.exp(0.079*states[17]) if states[17] < -40 else 0.77/(0.13 +\
+        0.049758141083938695*math.exp(-0.0900900900900901*states[17])))
+    tau_h = 1.0/(alpha_h + beta_h)
+    values[4] = (-states[4] + h_inf)/tau_h
+
+    # Expressions for the j gate component
+    j_inf = 1.0/((1 +\
+        15212.593285654404*math.exp(0.13458950201884254*states[17]))*(1 +\
+        15212.593285654404*math.exp(0.13458950201884254*states[17])))
+    alpha_j = ((37.78 + states[17])*(-25428*math.exp(0.2444*states[17]) -\
+        6.948e-06*math.exp(-0.04391*states[17]))/(1 +\
+        50262745825.95399*math.exp(0.311*states[17])) if states[17] < -40 else\
+        0)
+    beta_j = (0.02424*math.exp(-0.01052*states[17])/(1 +\
+        0.003960868339904256*math.exp(-0.1378*states[17])) if states[17] <\
+        -40 else 0.6*math.exp(0.057*states[17])/(1 +\
+        0.040762203978366204*math.exp(-0.1*states[17])))
+    tau_j = 1.0/(alpha_j + beta_j)
+    values[5] = (-states[5] + j_inf)/tau_j
+
+    # Expressions for the Sodium background current component
+    i_b_Na = parameters[5]*(states[17] - E_Na)
+
+    # Expressions for the L_type Ca current component
+    V_eff = (0.01 if math.fabs(-15 + states[17]) < 0.01 else -15 + states[17])
+    i_CaL =\
+        4*parameters[6]*states[6]*states[7]*states[8]*states[9]*(parameters[44]*parameters[44])*(-parameters[24]\
+        +\
+        0.25*states[15]*math.exp(2*parameters[44]*V_eff/(parameters[45]*parameters[46])))*V_eff/(parameters[45]*parameters[46]*(-1 +\
+        math.exp(2*parameters[44]*V_eff/(parameters[45]*parameters[46]))))
+
+    # Expressions for the d gate component
+    d_inf = 1.0/(1 +\
+        0.34415378686541237*math.exp(-0.13333333333333333*states[17]))
+    alpha_d = 0.25 + 1.4/(1 + math.exp(-35/13 - states[17]/13))
+    beta_d = 1.4/(1 + math.exp(1 + states[17]/5))
+    gamma_d = 1.0/(1 + math.exp(5/2 - states[17]/20))
+    tau_d = alpha_d*beta_d + gamma_d
+    values[6] = (-states[6] + d_inf)/tau_d
+
+    # Expressions for the f gate component
+    f_inf = 1.0/(1 + math.exp(20/7 + states[17]/7))
+    tau_f = 20 + 180/(1 + math.exp(3 + states[17]/10)) + 200/(1 +\
+        math.exp(13/10 - states[17]/10)) + 1102.5*math.exp(-((27 +\
+        states[17])*(27 + states[17]))/225)
+    values[7] = (-states[7] + f_inf)/tau_f
+
+    # Expressions for the F2 gate component
+    f2_inf = 0.33 + 0.67/(1 + math.exp(5 + states[17]/7))
+    tau_f2 = 31/(1 + math.exp(5/2 - states[17]/10)) + 80/(1 + math.exp(3 +\
+        states[17]/10)) + 562*math.exp(-((27 + states[17])*(27 +\
+        states[17]))/240)
+    values[8] = (-states[8] + f2_inf)/tau_f2
+
+    # Expressions for the FCass gate component
+    fCass_inf = 0.4 + 0.6/(1 + 400.0*(states[15]*states[15]))
+    tau_fCass = 2 + 80/(1 + 400.0*(states[15]*states[15]))
+    values[9] = (-states[9] + fCass_inf)/tau_fCass
+
+    # Expressions for the Calcium background current component
+    i_b_Ca = parameters[7]*(states[17] - E_Ca)
+
+    # Expressions for the Transient outward current component
+    i_to = parameters[8]*states[10]*states[11]*(states[17] - E_K)
+
+    # Expressions for the s gate component
+    s_inf = 1.0/(1 + math.exp(4 + states[17]/5))
+    tau_s = 3 + 5/(1 + math.exp(-4 + states[17]/5)) + 85*math.exp(-((45 +\
+        states[17])*(45 + states[17]))/320)
+    values[10] = (-states[10] + s_inf)/tau_s
+
+    # Expressions for the r gate component
+    r_inf = 1.0/(1 + math.exp(10/3 - states[17]/6))
+    tau_r = 0.8 + 9.5*math.exp(-((40 + states[17])*(40 + states[17]))/1800)
+    values[11] = (-states[11] + r_inf)/tau_r
+
+    # Expressions for the Sodium potassium pump current component
+    i_NaK = parameters[11]*parameters[52]*states[16]/((parameters[10] +\
+        parameters[52])*(parameters[9] + states[16])*(1 +\
+        0.0353*math.exp(-parameters[44]*states[17]/(parameters[45]*parameters[46]))\
+        +\
+        0.1245*math.exp(-0.1*parameters[44]*states[17]/(parameters[45]*parameters[46]))))
+
+    # Expressions for the Sodium calcium exchanger current component
+    i_NaCa =\
+        parameters[12]*(parameters[24]*(states[16]*states[16]*states[16])*math.exp(parameters[17]*parameters[44]*states[17]/(parameters[45]*parameters[46]))\
+        -\
+        parameters[16]*states[12]*(parameters[42]*parameters[42]*parameters[42])*math.exp(parameters[44]*states[17]*(-1 +\
+        parameters[17])/(parameters[45]*parameters[46])))/((1 +\
+        parameters[13]*math.exp(parameters[44]*states[17]*(-1 +\
+        parameters[17])/(parameters[45]*parameters[46])))*(parameters[14] +\
+        parameters[24])*((parameters[15]*parameters[15]*parameters[15]) +\
+        (parameters[42]*parameters[42]*parameters[42])))
+
+    # Expressions for the Calcium pump current component
+    i_p_Ca = parameters[19]*states[12]/(parameters[18] + states[12])
+
+    # Expressions for the Potassium pump current component
+    i_p_K = parameters[20]*(states[17] - E_K)/(1 +\
+        65.40521574193832*math.exp(-0.16722408026755853*states[17]))
+
+    # Expressions for the Calcium dynamics component
+    i_up = parameters[35]/(1 +\
+        (parameters[29]*parameters[29])/(states[12]*states[12]))
+    i_leak = parameters[30]*(states[14] - states[12])
+    i_xfer = parameters[34]*(states[15] - states[12])
+    kcasr = parameters[40] - (parameters[40] - parameters[41])/(1 +\
+        (parameters[25]*parameters[25])/(states[14]*states[14]))
+    Ca_i_bufc = 1.0/(1 + parameters[21]*parameters[26]/((parameters[26] +\
+        states[12])*(parameters[26] + states[12])))
+    Ca_sr_bufsr = 1.0/(1 + parameters[22]*parameters[27]/((parameters[27] +\
+        states[14])*(parameters[27] + states[14])))
+    Ca_ss_bufss = 1.0/(1 + parameters[23]*parameters[28]/((parameters[28] +\
+        states[15])*(parameters[28] + states[15])))
+    values[12] = (parameters[32]*(-i_up + i_leak)/parameters[47] -\
+        parameters[43]*(-2*i_NaCa + i_b_Ca +\
+        i_p_Ca)/(2*parameters[44]*parameters[47]) + i_xfer)*Ca_i_bufc
+    k1 = parameters[36]/kcasr
+    k2 = parameters[37]*kcasr
+    O = states[13]*(states[15]*states[15])*k1/(parameters[38] +\
+        (states[15]*states[15])*k1)
+    values[13] = parameters[39]*(1 - states[13]) - states[13]*states[15]*k2
+    i_rel = parameters[31]*(states[14] - states[15])*O
+    values[14] = (-i_leak - i_rel + i_up)*Ca_sr_bufsr
+    values[15] = (parameters[32]*i_rel/parameters[33] -\
+        parameters[47]*i_xfer/parameters[33] -\
+        parameters[43]*i_CaL/(2*parameters[33]*parameters[44]))*Ca_ss_bufss
+
+    # Expressions for the Sodium dynamics component
+    values[16] = parameters[43]*(-i_Na - i_b_Na - 3*i_NaCa -\
+        3*i_NaK)/(parameters[44]*parameters[47])
+
+    # Expressions for the Membrane component
+    i_Stim = (-parameters[48] if t -\
+        parameters[50]*math.floor(t/parameters[50]) <= parameters[49] +\
+        parameters[51] and t - parameters[50]*math.floor(t/parameters[50]) >=\
+        parameters[51] else 0)
+    values[17] = -i_CaL - i_K1 - i_Kr - i_Ks - i_Na - i_NaCa - i_NaK - i_Stim\
+        - i_b_Ca - i_b_Na - i_p_Ca - i_p_K - i_to
+
+    # Expressions for the Potassium dynamics component
+    values[18] = parameters[43]*(-i_K1 - i_Kr - i_Ks - i_Stim - i_p_K - i_to\
+        + 2*i_NaK)/(parameters[44]*parameters[47])
+
