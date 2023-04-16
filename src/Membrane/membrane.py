@@ -99,7 +99,7 @@ class MembraneModel():
 
         return self.states
 
-    def step(self, dt, stimulus, locator=None):
+    def step_lsoda(self, dt, stimulus, locator=None):
         df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
 
         ode_rhs_address = self.ode.rhs_numba.address
@@ -108,6 +108,8 @@ class MembraneModel():
         if locator is not None:
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
 
+        timer = df.Timer('ODE step LSODA')
+        timer.start()
         tsteps = np.array([self.time, self.time+dt])
         for row in lidx:  # Count ODEs
             row_parameters = self.parameters[row]
@@ -124,11 +126,34 @@ class MembraneModel():
                                        rtol=1.0e-8, atol=1.0e-10)
             assert success
             self.states[row][:] = new_state[-1]
-            
         self.time = tsteps[-1]
+        dt = timer.stop()
+        df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
 
-        df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')        
+    def step(self, dt, stimulus, locator=None):
+        df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
 
+        ode_rhs_address = self.ode.rhs_numba.address
+        
+        lidx = np.arange(self.nodes)        
+        if locator is not None:
+            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+
+        timer = df.Timer('ODE step LSODA')
+        timer.start()
+        tsteps = np.array([self.time, self.time+dt])
+        for row in lidx:  # Count ODEs
+            row_parameters = self.parameters[row]
+            for key, value in stimulus.items():
+                row_parameters[self.ode.parameter_indices(key)] = value
+            current_state = self.states[row]
+
+            new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
+            self.states[row][:] = new_state[-1]
+        self.time = tsteps[-1]
+        dt = timer.stop()
+        df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
+        
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -158,7 +183,7 @@ if __name__ == '__main__':
 
     vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')    
     for _ in range(5):
-        membrane.step(dt=0.01, stimulus=stimulus)
+        membrane.step_lsoda(dt=0.01, stimulus=stimulus)
 
         membrane.update_PDE_membrane_potential(u)
         vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')        

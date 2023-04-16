@@ -51,16 +51,27 @@ facets and interaction with HDiv Trace space in FEniCS.
   
  #### Dependencies ####
 In addition to standard FEniCS stack (`2019.1.0` and higher) you will need
-* [`gotran`](https://finsberg.github.io/docs.gotran/index.html)
+* [`gotran`](https://finsberg.github.io/docs.gotran/index.html) is used to generate the Python module defining the ODE
+* [`numbalsoda`](https://github.com/Nicholaswogan/numbalsoda) and [`numba`](https://numba.pydata.org/) are used to gain speed.
 
-which is used to generate the Python module defining the ODE.
+Note that standard way of using `gotran` (spefically `gotran2py`) is to generate
+a module which specifies the ODE model (as python) for the membrane. Then, to integrate
+the model forward in time one would e.g. use scipy. However, this solution is very slow
+as the integrator needs to constantly call into to Python. To gain speed, what we do instead is
+
+- use `numba` to generate a C code for evaluation of the ODE. This requires switching
+the representations in `gotran2py` from "named" to "array"
+- the resulting function is passed to `numblsoda` integrator (the entire integration
+should then happen in C)
+- the speed-up of this compiled approach seems to be 30-40x relative to the scipy+gotran
+approach (eg. 50k ODEs can be solved in about 2.5s)
 
  #### TODO ####
  - [ ] consider a test where we have dy/dt = A(x)y with y(t=0) = y0
  - [ ] after stepping u should be fine
  - [ ] add forcing:  dy/dt = A(x)y + f(t) with y(t=0) = y0
- - [ ] things are currently quite slow -> multiprocessing?
- - [ ] rely on cbc.beat instead (mostly for speed reason)?
+ - [ ] do we gain anything by additional compilation and multiprocessing?
+ - [ ] (**maybe**) rely on cbc.beat instead (mostly for speed reason)?
 
 ### License ###
 
