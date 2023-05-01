@@ -99,22 +99,27 @@ class MembraneModel():
 
         return self.states
 
-    def step_lsoda(self, dt, stimulus, locator=None):
+    def step_lsoda(self, dt, stimulus, stimulus_locator=None):
+        if stimulus is None: stimulus = {}
+        
         df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
 
         ode_rhs_address = self.ode.rhs_numba.address
         
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+        stimulus_mask = np.zeros(self.nodes, dtype=bool)        
+        if stimulus_locator is not None:
+            stimulus_mask[:] = np.fromiter(map(stimulus_locator, self.dof_locations), dtype=bool)
 
         timer = df.Timer('ODE step LSODA')
         timer.start()
         tsteps = np.array([self.time, self.time+dt])
-        for row in lidx:  # Count ODEs
+        for row, is_stimulated in enumerate(stimulus_mask):  # Local 
             row_parameters = self.parameters[row]
-            for key, value in stimulus.items():
-                row_parameters[self.ode.parameter_indices(key)] = value
+
+            if is_stimulated:
+                for key, value in stimulus.items():
+                    row_parameters[self.ode.parameter_indices(key)] = value
+                    
             current_state = self.states[row]
 
             # new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
@@ -125,16 +130,16 @@ class MembraneModel():
                                        data=row_parameters,
                                        rtol=1.0e-8, atol=1.0e-10)
             assert success
-            self.states[row][:] = new_state[-1]
+            self.states[row, :] = new_state[-1]
         self.time = tsteps[-1]
         dt = timer.stop()
         df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
 
     def step(self, dt, stimulus, locator=None):
+        if stimulus is None: stimulus = {}
+        
         df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
 
-        ode_rhs_address = self.ode.rhs_numba.address
-        
         lidx = np.arange(self.nodes)        
         if locator is not None:
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
@@ -148,8 +153,12 @@ class MembraneModel():
                 row_parameters[self.ode.parameter_indices(key)] = value
             current_state = self.states[row]
 
-            new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
-            self.states[row][:] = new_state[-1]
+            print(self.states[row], 'current !!!')                        
+            new_state = odeint(self.ode.rhs, current_state, tsteps, args=(row_parameters, ))
+            print(new_state[-1], '???')
+            print(self.states[row], '!!!', self.states[row].shape, new_state[-1].shape)            
+            self.states[row, :] = 1*new_state[-1]
+            print(self.states[row])
         self.time = tsteps[-1]
         dt = timer.stop()
         df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
@@ -160,7 +169,7 @@ if __name__ == '__main__':
     import tentusscher_panfilov_2006_M_cell as ode
     from facet_plot import vtk_plot
     
-    mesh = df.UnitSquareMesh(128, 128)
+    mesh = df.UnitSquareMesh(5, 5)
     V = df.FunctionSpace(mesh, 'Discontinuous Lagrange Trace', 0)
     u = df.Function(V)
 
@@ -180,15 +189,28 @@ if __name__ == '__main__':
                 'stim_period': 0.2,
                 'stim_duration': 0.1,
                 'stim_start': 0}
+    stimulus = None
+
+    potential_history = []
 
     vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')    
-    for _ in range(5):
+    for _ in range(100):
         membrane.step_lsoda(dt=0.01, stimulus=stimulus)
+
+        potential_history.append(1*membrane.states[:, membrane.V_index])
 
         membrane.update_PDE_membrane_potential(u)
         vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')        
         print(u.vector().norm('l2'))
 
+
+    potential_history = np.array(potential_history)
+    
+    import matplotlib.pyplot as plt
+
+    plt.figure()
+    plt.plot(potential_history[:, 2])
+    plt.show()
     # TODO:
     # - consider a test where we have dy/dt = A(x)y with y(t=0) = y0
     # - after stepping u should be fine
