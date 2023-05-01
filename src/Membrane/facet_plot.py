@@ -8,7 +8,7 @@ import vtk
 from dlt_dof_extraction import is_dlt_scalar, get_indices, get_values
 import dolfin as df
 import numpy as np
-import os
+import os, json
 
 
 def vtk_plot_data(f, facet_f, tags):
@@ -87,3 +87,34 @@ def vtk_plot(f, facet_f, tags, path):
 
     return path
     
+
+class VTKSeries():
+    '''Stores pieces in folder and one master file'''
+    def __init__(self, name):
+        not os.path.exists(name) and os.makedirs(name)
+        base, ext = os.path.splitext(name)
+        assert ext == ''
+
+        self.series_name = f'{base}.vtk.series'
+        self.base = base
+        self.counter = 0
+
+        self.pieces = []
+
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        self.counter += 1        
+        return os.path.join(self.base, f'piece_{self.counter-1}.vtk')
+
+    def add(self, piece, time):
+        self.pieces.append([piece, time])
+
+    def write(self):
+        json_data = {'file-series-version': '1.0',
+                     'files': [dict(name=piece[0], time=piece[1]) for piece in self.pieces]}
+        with open(self.series_name, 'w') as out:
+            json.dump(json_data, out, indent=2)
+
+        

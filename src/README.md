@@ -61,7 +61,7 @@ as the integrator needs to constantly call into to Python. To gain speed, what w
 
 - use `numba` to generate a C code for evaluation of the ODE. This requires switching
 the representations in `gotran2py` from "named" to "array"
-- the resulting function is passed to `numblsoda` integrator (the entire integration
+- the resulting function is passed to `numbalsoda` integrator (the entire integration
 should then happen in C)
 - the speed-up of this compiled approach seems to be 30-40x relative to the scipy+gotran
 approach (eg. 50k ODEs can be solved in about 2.5s)

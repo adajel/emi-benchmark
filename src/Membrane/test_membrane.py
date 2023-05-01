@@ -3,7 +3,7 @@ import numpy as np
 
 # --------------------------------------------------------------------
 
-from facet_plot import vtk_plot
+from facet_plot import vtk_plot, VTKSeries
 from membrane import MembraneModel
 import simple_ode as ode
 
@@ -31,7 +31,9 @@ stimulus = {'stim_amplitude': 5,
 potential_history = []
 u_history = []
 
-vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')    
+series = VTKSeries('test_ode')
+series.add(vtk_plot(u, facet_f, (tag, ), path=next(series)), time=0)
+
 for _ in range(100):
     # print(membrane.parameters)
     membrane.step_lsoda(dt=0.01, stimulus=stimulus, stimulus_locator=lambda x: df.near(x[1], 1) | df.near(x[0], 0))
@@ -40,10 +42,11 @@ for _ in range(100):
 
     potential_history.append(1*membrane.states[:, membrane.V_index])
     u_history.append(u.vector().get_local())
-    
-    vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')        
-    print(u.vector().norm('l2'))
 
+    series.add(vtk_plot(u, facet_f, (tag, ), path=next(series)), time=membrane.time)    
+    
+    print(u.vector().norm('l2'))
+series.write()
 
 potential_history, u_history = map(np.array, (potential_history, u_history))
 
