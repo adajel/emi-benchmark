@@ -26,25 +26,28 @@ class MembraneModel():
         # For every spatial point there is an ODE with states/parameters which need
         # to be tracked
         nodes = len(self.indices)        
-        df.info(f'\tNumber of ODE points on the membrane {nodes}')
         self.nodes = nodes
         
         self.states = np.array([ode.init_state_values() for _ in range(nodes)])
         self.parameters = np.array([ode.init_parameter_values() for _ in range(nodes)])
 
         self.ode = ode
+        self.prefix = ode.__name__
         self.time = 0
-        
         self.V_index = ode.state_indices('V')
+
+        df.info(f'\t{self.prefix} Number of ODE points on the membrane {nodes}')        
 
     def set_parameter_values(self, param_dict, locator=None):
         ''' param_name -> (lambda x: value)'''
         lidx = np.arange(self.nodes)        
         if locator is not None:
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-        df.info(f'\tSet parameters for {len(lidx)} ODES')            
-        coords = self.dof_locations[lidx]
+        df.info(f'\t{self.prefix} Set parameters for {len(lidx)} ODES')
+
+        if len(lidx) == 0: return self.parameters
         
+        coords = self.dof_locations[lidx]
         for param in param_dict:
             col = self.ode.parameter_indices(param)
             get_param_value = param_dict[param]
@@ -60,9 +63,11 @@ class MembraneModel():
         lidx = np.arange(self.nodes)        
         if locator is not None:
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-        df.info(f'\tSet states for {len(lidx)} ODES')
-        coords = self.dof_locations[lidx]
+        df.info(f'\t{self.prefix} Set states for {len(lidx)} ODES')
+
+        if len(lidx) == 0: return self.states
         
+        coords = self.dof_locations[lidx]
         for param in state_dict:
             col = self.ode.state_indices(param)
             get_param_value = state_dict[param]
@@ -77,10 +82,10 @@ class MembraneModel():
         lidx = np.arange(self.nodes)        
         if locator is not None:
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-
+        # This is an okay question
         potentials = u.vector().get_local()
-        potentials[self.indices[lidx]] = self.states[lidx, self.V_index]
-
+        if len(lidx) > 0:
+            potentials[self.indices[lidx]] = self.states[lidx, self.V_index]
         u.vector().set_local(potentials)
         df.as_backend_type(u.vector()).update_ghost_values()
 
@@ -95,20 +100,18 @@ class MembraneModel():
             lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
 
         potentials = u.vector().get_local()
-        self.states[lidx, self.V_index] = potentials[self.indices[lidx]]
-
+        if len(lidx) > 0:
+            self.states[lidx, self.V_index] = potentials[self.indices[lidx]]
         return self.states
 
     def step_lsoda(self, dt, stimulus, stimulus_locator=None):
         if stimulus is None: stimulus = {}
-        
-        df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
 
         ode_rhs_address = self.ode.rhs_numba.address
-        
-        stimulus_mask = np.zeros(self.nodes, dtype=bool)        
-        if stimulus_locator is not None:
-            stimulus_mask[:] = np.fromiter(map(stimulus_locator, self.dof_locations), dtype=bool)
+
+        if stimulus_locator is None:
+            stimulus_locator = lambda x: True
+        stimulus_mask = np.fromiter(map(stimulus_locator, self.dof_locations), dtype=bool)
 
         timer = df.Timer('ODE step LSODA')
         timer.start()
@@ -133,35 +136,7 @@ class MembraneModel():
             self.states[row, :] = new_state[-1]
         self.time = tsteps[-1]
         dt = timer.stop()
-        df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
-
-    def step(self, dt, stimulus, locator=None):
-        if stimulus is None: stimulus = {}
-        
-        df.info(f'\tBefore ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])}')
-
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-
-        timer = df.Timer('ODE step LSODA')
-        timer.start()
-        tsteps = np.array([self.time, self.time+dt])
-        for row in lidx:  # Count ODEs
-            row_parameters = self.parameters[row]
-            for key, value in stimulus.items():
-                row_parameters[self.ode.parameter_indices(key)] = value
-            current_state = self.states[row]
-
-            print(self.states[row], 'current !!!')                        
-            new_state = odeint(self.ode.rhs, current_state, tsteps, args=(row_parameters, ))
-            print(new_state[-1], '???')
-            print(self.states[row], '!!!', self.states[row].shape, new_state[-1].shape)            
-            self.states[row, :] = 1*new_state[-1]
-            print(self.states[row])
-        self.time = tsteps[-1]
-        dt = timer.stop()
-        df.info(f'\tAfter ODE t = {self.time} |V| = {np.linalg.norm(self.states[:, self.V_index])} in {dt}')        
+        df.info(f'\t{self.prefix} After ODE step in {dt}')        
         
 # --------------------------------------------------------------------
 
@@ -179,7 +154,7 @@ if __name__ == '__main__':
     facet_f = df.MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
     # df.DomainBoundary().mark(facet_f, 1)
     tag = 0
-    
+
     membrane = MembraneModel(ode, facet_f=facet_f, tag=tag, V=V)
 
     membrane.set_ODE_membrane_potential(u)

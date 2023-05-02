@@ -90,12 +90,14 @@ def vtk_plot(f, facet_f, tags, path):
 
 class VTKSeries():
     '''Stores pieces in folder and one master file'''
-    def __init__(self, name):
+    def __init__(self, name, comm=None):
         not os.path.exists(name) and os.makedirs(name)
         base, ext = os.path.splitext(name)
         assert ext == ''
 
-        self.series_name = f'{base}.vtk.series'
+        self.mpi_info = (0, 1) if comm is None else (comm.rank, comm.size)
+        self.series_name = f'{base}_rank{self.mpi_info[0]}of{self.mpi_info[1]}.vtk.series'
+        print(self.series_name, '<<<')
         self.base = base
         self.counter = 0
 
@@ -106,7 +108,7 @@ class VTKSeries():
     
     def __next__(self):
         self.counter += 1        
-        return os.path.join(self.base, f'piece_{self.counter-1}.vtk')
+        return os.path.join(self.base, f'piece_{self.counter-1}_rank{self.mpi_info[0]}of{self.mpi_info[1]}.vtk')
 
     def add(self, piece, time):
         self.pieces.append([piece, time])

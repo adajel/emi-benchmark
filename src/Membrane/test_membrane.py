@@ -31,7 +31,7 @@ stimulus = {'stim_amplitude': 5,
 potential_history = []
 u_history = []
 
-series = VTKSeries('test_ode')
+series = VTKSeries('test_ode_serial')
 series.add(vtk_plot(u, facet_f, (tag, ), path=next(series)), time=0)
 
 for _ in range(100):

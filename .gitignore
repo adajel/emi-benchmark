@@ -5,4 +5,4 @@
 *.vtu
 *.h5
 *.json
-*.vtk
+*.vtk*
