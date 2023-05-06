@@ -21,13 +21,14 @@ tag = 0
 membrane = MembraneModel(ode, facet_f=facet_f, tag=tag, V=V)
 
 membrane.set_ODE_membrane_potential(u)
-membrane.set_parameter_values({'A11': lambda x: -3}, locator=lambda x: df.near(x[1], 0))
+membrane.set_ODE_parameter_values({'A11': lambda x: -3}, locator=lambda x: df.near(x[1], 0))
 
 stimulus = {'stim_amplitude': 5,
             'stim_period': 1_000_000,
             'stim_duration': 0.1,
             'stim_start': 0}
 
+V_index = ode.state_indices('V')
 potential_history = []
 u_history = []
 
@@ -38,9 +39,9 @@ for _ in range(100):
     # print(membrane.parameters)
     membrane.step_lsoda(dt=0.01, stimulus=stimulus, stimulus_locator=lambda x: df.near(x[1], 1) | df.near(x[0], 0))
 
-    membrane.update_PDE_membrane_potential(u)
+    membrane.get_PDE_membrane_potential(u)
 
-    potential_history.append(1*membrane.states[:, membrane.V_index])
+    potential_history.append(1*membrane.states[:, V_index])
     u_history.append(u.vector().get_local())
 
     series.add(vtk_plot(u, facet_f, (tag, ), path=next(series)), time=membrane.time)    

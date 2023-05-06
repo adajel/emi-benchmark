@@ -27,7 +27,7 @@ membranes = [MembraneModel(ode_simple, facet_f=facet_f, tag=0, V=V),
 
 [membrane.set_ODE_membrane_potential(u) for membrane in membranes]
 
-membranes[0].set_parameter_values({'A11': lambda x: -3}, locator=lambda x: df.near(x[1], 0))
+membranes[0].set_ODE_parameter_values({'A11': lambda x: -3}, locator=lambda x: df.near(x[1], 0))
 
 stimulus = {'stim_amplitude': 5,
             'stim_period': 1_000_000,
@@ -43,7 +43,7 @@ for _ in range(100):
     [membrane.step_lsoda(dt=0.01, stimulus=stimulus, stimulus_locator=lambda x: df.near(x[1], 1) | df.near(x[0], 0))
      for membrane in membranes]
 
-    [membrane.update_PDE_membrane_potential(u) for membrane in membranes]
+    [membrane.get_PDE_membrane_potential(u) for membrane in membranes]
     
     print(u.vector().norm('l2'))
 

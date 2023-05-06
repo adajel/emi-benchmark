@@ -1,16 +1,17 @@
-from scipy.integrate import odeint
 import dlt_dof_extraction as dlt
 import dolfin as df
 import numpy as np
 
 from numbalsoda import lsoda
 
+
 class MembraneModel():
-    '''
-    Facets where facet_f[facet] == tag are governed by this ode whose 
-    source terms will be taken from V
-    '''
+    '''ODE on membrane defined by tagged facet function'''
     def __init__(self, ode, facet_f, tag, V):
+        '''
+        Facets where facet_f[facet] == tag are governed by this ode whose 
+        source terms will be taken from V
+        '''
         mesh = facet_f.mesh()
         assert mesh.topology().dim()-1 == facet_f.dim()
         assert isinstance(tag, int)
@@ -34,77 +35,52 @@ class MembraneModel():
         self.ode = ode
         self.prefix = ode.__name__
         self.time = 0
-        self.V_index = ode.state_indices('V')
 
-        df.info(f'\t{self.prefix} Number of ODE points on the membrane {nodes}')        
+        df.info(f'\t{self.prefix} Number of ODE points on the membrane {nodes}')
+        
+    # --- Setting ODE state/parameter based on a FEM function
+    def set_ODE_state(self, which, u, locator=None):
+        '''Set ODE based on PDE function `u`'''
+        return self.__set_ODE('state', which, u, locator=locator)
 
-    def set_parameter_values(self, param_dict, locator=None):
+    def set_ODE_parameter(self, which, u, locator=None):
+        '''Set ODE based on PDE function `u`'''
+        return self.__set_ODE('parameter', which, u, locator=locator)        
+
+    # --- Getting PDE state/parameter based on a FEM function
+    def get_PDE_state(self, which, u, locator=None):
+        '''Set PDE function `u` based on ODE'''
+        return self.__get_PDE('state', which, u, locator=locator)
+
+    def get_PDE_parameter(self, which, u, locator=None):
+        '''Set ODE based on PDE function `u`'''
+        return self.__get_PDE('parameter', which, u, locator=locator)        
+
+    # --- Setting ODE states/parameters to "constant" values at certain locations
+    def set_ODE_state_values(self, value_dict, locator=None):
         ''' param_name -> (lambda x: value)'''
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-        df.info(f'\t{self.prefix} Set parameters for {len(lidx)} ODES')
-
-        if len(lidx) == 0: return self.parameters
-        
-        coords = self.dof_locations[lidx]
-        for param in param_dict:
-            col = self.ode.parameter_indices(param)
-            get_param_value = param_dict[param]
-            for row, x in zip(lidx, coords):  # Counts the odes
-                self.parameters[row, col] = get_param_value(x)
-        return self.parameters
-            
-    def set_state_values(self, state_dict, locator=None):
+        return self.__set_ODE_values('state', value_dict, locator=locator)
+    
+    def set_ODE_parameter_values(self, value_dict, locator=None):
         ''' param_name -> (lambda x: value)'''
-        if 'V' in state_dict:
-            raise ValueError('Use `set_ODE_membrane_potential` for its update!')
-        
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-        df.info(f'\t{self.prefix} Set states for {len(lidx)} ODES')
+        return self.__set_ODE_values('parameter', value_dict, locator=locator)
 
-        if len(lidx) == 0: return self.states
-        
-        coords = self.dof_locations[lidx]
-        for param in state_dict:
-            col = self.ode.state_indices(param)
-            get_param_value = state_dict[param]
-            for row, x in zip(lidx, coords):  # Counts the odes
-                self.states[row, col] = get_param_value(x)
-        return self.states
-
-    def update_PDE_membrane_potential(self, u, locator=None):
-        '''Update PDE potentials from the ODE solver'''
-        assert self.V.ufl_element() == u.function_space().ufl_element()
-        
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
-        # This is an okay question
-        potentials = u.vector().get_local()
-        if len(lidx) > 0:
-            potentials[self.indices[lidx]] = self.states[lidx, self.V_index]
-        u.vector().set_local(potentials)
-        df.as_backend_type(u.vector()).update_ghost_values()
-
-        return u
-
+    # --- Convenience
     def set_ODE_membrane_potential(self, u, locator=None):
         '''Update PDE potentials from the ODE solver'''
-        assert self.V.ufl_element() == u.function_space().ufl_element()
-        
-        lidx = np.arange(self.nodes)        
-        if locator is not None:
-            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+        return self.set_ODE_state('V', u, locator=locator)
 
-        potentials = u.vector().get_local()
-        if len(lidx) > 0:
-            self.states[lidx, self.V_index] = potentials[self.indices[lidx]]
-        return self.states
+    def get_PDE_membrane_potential(self, u, locator=None):
+        '''Update PDE potentials from the ODE solver'''
+        return self.get_PDE_state('V', u, locator=locator)
 
+    @property
+    def V_index(self):
+        return self.ode.state_indices('V')
+
+    # ---- ODE integration ------
     def step_lsoda(self, dt, stimulus, stimulus_locator=None):
+        '''Solve the ODEs forward by dt with optional stimulus'''
         if stimulus is None: stimulus = {}
 
         ode_rhs_address = self.ode.rhs_numba.address
@@ -113,6 +89,8 @@ class MembraneModel():
             stimulus_locator = lambda x: True
         stimulus_mask = np.fromiter(map(stimulus_locator, self.dof_locations), dtype=bool)
 
+        df.info(f'\t{self.prefix} Stepping {self.nodes} ODEs')
+        
         timer = df.Timer('ODE step LSODA')
         timer.start()
         tsteps = np.array([self.time, self.time+dt])
@@ -125,8 +103,6 @@ class MembraneModel():
                     
             current_state = self.states[row]
 
-            # new_state = odeint(ode.rhs, current_state, tsteps, args=(row_parameters, ))
-
             new_state, success = lsoda(ode_rhs_address,
                                        current_state,
                                        tsteps,
@@ -136,8 +112,74 @@ class MembraneModel():
             self.states[row, :] = new_state[-1]
         self.time = tsteps[-1]
         dt = timer.stop()
-        df.info(f'\t{self.prefix} After ODE step in {dt}')        
+        df.info(f'\t{self.prefix} Stepped {self.nodes} ODES in {dt}s')
         
+        return self.states
+    
+    # --- Work horses
+    def __set_ODE(self, what, which, u, locator=None):
+        '''ODE setting'''
+        (get_index, destination) = {
+            'state': (self.ode.state_indices, self.states),
+            'parameter': (self.ode.parameter_indices, self.parameters)
+        }[what]
+        the_index = get_index(which)
+        
+        assert self.V.ufl_element() == u.function_space().ufl_element()
+        
+        lidx = np.arange(self.nodes)        
+        if locator is not None:
+            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+
+        source = u.vector().get_local()
+        if len(lidx) > 0:
+            destination[lidx, the_index] = source[self.indices[lidx]]
+        return self.states
+
+    def __get_PDE(self, what, which, u, locator=None):
+        '''Update PDE potentials from the ODE solver'''
+        (get_index, source) = {
+            'state': (self.ode.state_indices, self.states),
+            'parameter': (self.ode.parameter_indices, self.parameters)
+        }[what]
+        the_index = get_index(which)
+        
+        assert self.V.ufl_element() == u.function_space().ufl_element()
+        
+        lidx = np.arange(self.nodes)        
+        if locator is not None:
+            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+        # This is an okay question
+        destination = u.vector().get_local()
+        if len(lidx) > 0:
+            destination[self.indices[lidx]] = source[lidx, the_index]
+        u.vector().set_local(destination)
+        df.as_backend_type(u.vector()).update_ghost_values()
+
+        return u
+
+    def __set_ODE_values(self, what, value_dict, locator=None):
+        '''Batch setter'''
+        (destination, get_col) = {
+            'state': (self.states, self.ode.state_indices),
+            'parameter': (self.parameters, self.ode.parameter_indices)
+        }[what]
+        
+        lidx = np.arange(self.nodes)        
+        if locator is not None:
+            lidx = lidx[np.fromiter(map(locator, self.dof_locations), dtype=bool)]
+        df.info(f'\t{self.prefix} Set {what} for {len(lidx)} ODES')
+
+        if len(lidx) == 0: return destination
+        
+        coords = self.dof_locations[lidx]
+        for param in value_dict:
+            col = get_col(param)
+            get_value = value_dict[param]
+            for row, x in zip(lidx, coords):  # Counts the odes
+                destination[row, col] = get_value(x)
+        return destination
+
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -158,7 +200,7 @@ if __name__ == '__main__':
     membrane = MembraneModel(ode, facet_f=facet_f, tag=tag, V=V)
 
     membrane.set_ODE_membrane_potential(u)
-    membrane.set_parameter_values({'g_Kr': lambda x: 20}, locator=lambda x: df.near(x[0], 0))
+    membrane.set_ODE_parameter_values({'g_Kr': lambda x: 20}, locator=lambda x: df.near(x[0], 0))
 
     stimulus = {'stim_amplitude': 0.1,
                 'stim_period': 0.2,
@@ -166,15 +208,16 @@ if __name__ == '__main__':
                 'stim_start': 0}
     stimulus = None
 
+    V_index = ode.state_indices('V')
     potential_history = []
 
     vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')    
     for _ in range(100):
         membrane.step_lsoda(dt=0.01, stimulus=stimulus)
 
-        potential_history.append(1*membrane.states[:, membrane.V_index])
+        potential_history.append(1*membrane.states[:, V_index])
 
-        membrane.update_PDE_membrane_potential(u)
+        membrane.get_PDE_membrane_potential(u)
         vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')        
         print(u.vector().norm('l2'))
 
