@@ -39,40 +39,40 @@ class MembraneModel():
         df.info(f'\t{self.prefix} Number of ODE points on the membrane {nodes}')
         
     # --- Setting ODE state/parameter based on a FEM function
-    def set_ODE_state(self, which, u, locator=None):
+    def set_state(self, which, u, locator=None):
         '''Set ODE based on PDE function `u`'''
         return self.__set_ODE('state', which, u, locator=locator)
 
-    def set_ODE_parameter(self, which, u, locator=None):
+    def set_parameter(self, which, u, locator=None):
         '''Set ODE based on PDE function `u`'''
         return self.__set_ODE('parameter', which, u, locator=locator)        
 
     # --- Getting PDE state/parameter based on a FEM function
-    def get_PDE_state(self, which, u, locator=None):
+    def get_state(self, which, u, locator=None):
         '''Set PDE function `u` based on ODE'''
         return self.__get_PDE('state', which, u, locator=locator)
 
-    def get_PDE_parameter(self, which, u, locator=None):
+    def get_parameter(self, which, u, locator=None):
         '''Set ODE based on PDE function `u`'''
         return self.__get_PDE('parameter', which, u, locator=locator)        
 
     # --- Setting ODE states/parameters to "constant" values at certain locations
-    def set_ODE_state_values(self, value_dict, locator=None):
+    def set_state_values(self, value_dict, locator=None):
         ''' param_name -> (lambda x: value)'''
         return self.__set_ODE_values('state', value_dict, locator=locator)
     
-    def set_ODE_parameter_values(self, value_dict, locator=None):
+    def set_parameter_values(self, value_dict, locator=None):
         ''' param_name -> (lambda x: value)'''
         return self.__set_ODE_values('parameter', value_dict, locator=locator)
 
     # --- Convenience
-    def set_ODE_membrane_potential(self, u, locator=None):
+    def set_membrane_potential(self, u, locator=None):
         '''Update PDE potentials from the ODE solver'''
-        return self.set_ODE_state('V', u, locator=locator)
+        return self.set_state('V', u, locator=locator)
 
-    def get_PDE_membrane_potential(self, u, locator=None):
+    def get_membrane_potential(self, u, locator=None):
         '''Update PDE potentials from the ODE solver'''
-        return self.get_PDE_state('V', u, locator=locator)
+        return self.get_state('V', u, locator=locator)
 
     @property
     def V_index(self):
@@ -199,8 +199,8 @@ if __name__ == '__main__':
 
     membrane = MembraneModel(ode, facet_f=facet_f, tag=tag, V=V)
 
-    membrane.set_ODE_membrane_potential(u)
-    membrane.set_ODE_parameter_values({'g_Kr': lambda x: 20}, locator=lambda x: df.near(x[0], 0))
+    membrane.set_membrane_potential(u)
+    membrane.set_parameter_values({'g_Kr': lambda x: 20}, locator=lambda x: df.near(x[0], 0))
 
     stimulus = {'stim_amplitude': 0.1,
                 'stim_period': 0.2,
@@ -217,7 +217,7 @@ if __name__ == '__main__':
 
         potential_history.append(1*membrane.states[:, V_index])
 
-        membrane.get_PDE_membrane_potential(u)
+        membrane.get_membrane_potential(u)
         vtk_plot(u, facet_f, (tag, ), path=f'test_ode_t{membrane.time}.vtk')        
         print(u.vector().norm('l2'))
 

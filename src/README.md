@@ -67,6 +67,8 @@ should then happen in C)
 approach (eg. 50k ODEs can be solved in about 2.5s)
 
  #### TODO ####
+ - [ ] Can we get different stimulus to gotran? If not we need to write the rhs
+       functionality in manually by editing the generated file.
  - [ ] consider a test where we have dy/dt = A(x)y with y(t=0) = y0
  - [ ] after stepping u should be fine
  - [ ] add forcing:  dy/dt = A(x)y + f(t) with y(t=0) = y0
