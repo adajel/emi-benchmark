@@ -16,7 +16,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('medit_path', type=str, help='Medit file to convert')
     parser.add_argument('-pvdcells', type=int, default=0, choices=(0, 1))
-    parser.add_argument('-test', type=int, default=0, choices=(0, 1))    
+    parser.add_argument('-test', type=int, default=0, choices=(0, 1))
+    parser.add_argument('-to_binary', type=int, default=0, choices=(0, 1))        
     args, _ = parser.parse_known_args()    
 
     name, ext = os.path.splitext(os.path.basename(args.medit_path))
@@ -126,3 +127,23 @@ if __name__ == '__main__':
 
         assert set(np.unique(cell_f.array())) == set(cell_tags) | set((0, ))
         assert set(np.unique(facet_f.array())) == set(iface_tags) | set((0, )) | set(cell_tags)
+
+    # Do not make distinction between cells
+    if args.to_binary:
+        out_h5 = f'{name}_converted_binary.h5'
+
+        cell_values = cell_f.array()
+        cell_values[cell_values > 1] = 1
+
+        facet_values = facet_f.array()
+        facet_values[facet_values > 1] = 1
+        
+        with df.HDF5File(mesh.mpi_comm(), out_h5, 'w') as f:
+            f.write(mesh, 'mesh')
+            f.write(cell_f, 'cells')
+            f.write(facet_f, 'interfaces')
+        time_print('Writing mesh to HDF5')
+        
+        if args.pvdcells:
+            df.File(f'{name}_cells_binary.pvd') << cell_f
+            df.File(f'{name}_facet_binary.pvd') << facet_f
